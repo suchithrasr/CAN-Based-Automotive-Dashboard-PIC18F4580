@@ -15,4 +15,3 @@
 #define INDICATOR_MSG_ID 0x50
 
 #endif	/* MSG_ID_H */
-

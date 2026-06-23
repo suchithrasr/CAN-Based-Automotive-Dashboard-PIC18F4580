@@ -1,35 +1,59 @@
-#include "ecu2_sensor.h"
-#include "adc.h"
-#include "can.h"
-#include "msg_id.h"
-//#include "uart.h"
+
+/* File:   main.c
+ * Author: Suchithra S
+ *
+ * Created on 24 April, 2026, 10:11 AM
+ */
+
+
 #include <xc.h>
+#include <stdint.h>
+#include "can.h"
+#include "clcd.h"
+#include "msg_id.h"
+#include "message_handler.h"
+#include "timer0.h"
 
-void init_config(void)
-{
-    init_adc();
+static void init_leds(void) {
+    /* Configure PORTB: RB3 as input (CAN RX), all others as output for LEDs */
+    TRISB = 0x08;
+
+    /* Turn off all LEDs at startup */
+    PORTB = 0x00;
+}
+
+static void init_config(void) {
+    /* Initialize CLCD display for dashboard output */
+    init_clcd();
+
+    /* Initialize CAN module to receive data from ECU1 */
     init_can();
-    init_digital_keypad();
-  
+
+    /* Initialize indicator LED output pins */
+    init_leds();
+
+    /* Enable peripheral interrupts for CAN and Timer */
+    PEIE = 1;
+
+    /* Enable global interrupts to allow ISR execution */
+    GIE = 1;
+
+    /* Initialize Timer0 for indicator LED blink timing */
+    init_timer0();
 }
 
-int main()
-{
+void main(void) {
+    /* Initialize all peripherals before entering the main loop */
     init_config();
-    while(1)
-    {
-       unsigned int rpm =  get_rpm();
-       char rpm_str[5];
-       rpm_str[0] = (rpm / 1000) % 10 + '0';
-       rpm_str[1] = (rpm / 100) % 10 + '0';
-       rpm_str[2] = (rpm / 10) % 10 + '0';
-       rpm_str[3] = (rpm % 10) + '0';
-       rpm_str[4] = '\0';
-       
-       can_transmit(RPM_MSG_ID,rpm_str,4);
-       for (int wait = 1000; wait >0; wait--);
-        char gear = get_gear_pos();
-        can_transmit(GEAR_MSG_ID,&gear,1);
-        for(int i = 1000;i > 0;i--);
+
+    /* Print static dashboard header row on CLCD line 1 */
+    clcd_print((const unsigned char*)"SPD IND RPM  GR", LINE1(0));
+
+    /* Continuously process incoming CAN messages and update the display */
+    while (1) {
+        process_canbus_data();
     }
+
+    return;
 }
+
