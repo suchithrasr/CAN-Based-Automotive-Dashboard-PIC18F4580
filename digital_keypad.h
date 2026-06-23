@@ -14,9 +14,7 @@
 
 #define INPUT_PINS					0x0F
 
-/* Configure keypad pins as inputs */
 void init_digital_keypad(void);
-/* Read keypad and return active key pattern based on selected detection type */
 unsigned char read_digital_keypad(unsigned char detection_type);
 
 #endif

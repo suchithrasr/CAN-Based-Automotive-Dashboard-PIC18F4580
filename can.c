@@ -1,127 +1,112 @@
-/*
- * File:   can.c
- * Author: Suchithra S
- *
- * Created on 23 April, 2026, 9:55 PM
- */
-
-/* File for CAN configuration, message ID setup, data transmission, and reception */
+/*File for CAN configuration , setting message id's, Data Transmission, */
 #include <xc.h>
 #include "can.h"
+//#include "clcd.h"
 
-/* Enum defining CAN operation modes for CANCON register */
+/* CAN operation mode values*/
 typedef enum _CanOpMode {
-    e_can_op_mode_normal = 0x00,   /* Normal operation mode for live bus communication */
-    e_can_op_mode_loop   = 0x40,   /* Loopback mode for internal self-testing */
-    e_can_op_mode_config = 0x80    /* Configuration mode for baud rate and filter setup */
+    /* Use this to access opmode bits */
+    e_can_op_mode_normal = 0x00,
+    e_can_op_mode_loop = 0x40,
+    e_can_op_mode_config = 0x80
 } CanOpMode;
 
+/*Configuration function for CAN */
 void init_can(void) {
-    /* Configure RB2 as CAN TX output pin */
-    TRISB2 = 0;
+    /* CAN_TX = RB2, CAN_RX = RB3 */
+    TRISB2 = 0; /* CAN TX */
+    TRISB3 = 1; /* CAN RX */
 
-    /* Configure RB3 as CAN RX input pin */
-    TRISB3 = 1;
+    /* Enter CAN module into config mode */
+    /* clear previous mode */
+    CAN_SET_OPERATION_MODE_NO_WAIT(e_can_op_mode_config); /* set new mode */
+//    while ((CANSTAT & 0xE0) != 0x00);
 
-    /* Switch CAN module to configuration mode to allow register writes */
-    CAN_SET_OPERATION_MODE_NO_WAIT(e_can_op_mode_config);
 
-    /* Wait until CANSTAT confirms configuration mode is active */
+    /* Wait untill desired mode is set */
     while (CANSTAT != 0x80);
 
-    /* Select ECAN Mode 0 (legacy mode with 2 receive buffers) */
+    /* Enter CAN module into Mode 0 */
     ECANCON = 0x00;
 
-    /* Set baud rate prescaler: SJW=4TQ, BRP=4 for 8MHz operation */
-    BRGCON1 = 0xE1;
+    /* Initialize CAN Timing 8MHz */
+    BRGCON1 = 0xE1; /* 1110 0001, SJW=4, TQ, BRP 4 */
+    BRGCON2 = 0x1B; /* 0001 1011, SEG2PHTS 1 sampled once PS1=4TQ PropagationT 4TQ */
+    BRGCON3 = 0x03; /* 0000 0011, PS2, 4TQ */
 
-    /* Set phase segment 1 to 4TQ, propagation segment to 4TQ, sample once */
-    BRGCON2 = 0x1B;
-
-    /* Set phase segment 2 to 4TQ */
-    BRGCON3 = 0x03;
-
-    /* Disable all receive filters so all messages are accepted */
+    /*
+     * Enable Filters
+     * Filter 0
+     */
     RXFCON0 = 0x00;
-
-    /* Switch CAN module to normal operation mode */
+    /* Enter CAN module into Loop back mode */
     CAN_SET_OPERATION_MODE_NO_WAIT(e_can_op_mode_normal);
 
-    /* Configure RXB0 to receive all message types */
+    /* Set Receive Mode for buffers */
     RXB0CON = 0x00;
-
-    /* Set RXM bits to receive all messages regardless of filter match */
-    RXB0CONbits.RXM0 = 1;
-    RXB0CONbits.RXM1 = 1;
 }
 
 static uint16_t get_msg_id_std(void) {
     uint16_t id = 0;
-
-    /* Reconstruct 11-bit standard ID from SIDH and SIDL registers */
     id = ((RXB0SIDL >> 5) & 0x7) | (RXB0SIDH << 3);
     return id;
 }
 
+/*function for the setting the message id's*/
 static void set_msg_id_std(unsigned int id) {
-    /* Write lower 3 bits of ID into SIDL register bits [7:5] */
     TXB0SIDL = (id & 0x7) << 5;
-
-    /* Write upper 8 bits of ID into SIDH register */
     TXB0SIDH = (id >> 3);
 }
 
+/*DATA transmission function for Speed and Gear change*/
+
 void can_transmit(uint16_t msg_id, const uint8_t *data, uint8_t len) {
     uint8_t *ptr;
+//    while (TXB0REQ);
 
-    /* Clear extended identifier registers (using standard frame only) */
-    TXB0EIDH = 0x00;
-    TXB0EIDL = 0x00;
+    TXB0EIDH = 0x00; /* Extended Identifier */
+    TXB0EIDL = 0x00; /* Extended Identifier */
 
-    /* Load the standard message ID into transmit buffer registers */
+    // Set MSG ID
     set_msg_id_std(msg_id);
 
-    /* Set the data length code to the number of bytes to send */
+    // Set data length
     TXB0DLC = len;
-
-    /* Get pointer to the first transmit data byte register */
+    /* Send the data by writing the bytes to individual 
+     *  TXB0D0, TXB0D1 .... TXB0D7
+     * Max len should be 8 (No error handing here :(
+     * */
     ptr = (uint8_t *) & TXB0D0;
-
-    /* Copy each data byte into the transmit buffer sequentially */
     for (int i = 0; i < len; i++) {
         ptr[i] = data[i];
     }
-
-    /* Request transmission by setting the TXREQ bit */
-    TXB0REQ = 1;
+    TXB0REQ = 1; /* Set the buffer to transmit */
 }
 
+/* Function to receive CAN bus data
+ * len can be zero if no data is available
+ * Mandatory for caller to check len before processing
+ * */
 void can_receive(uint16_t *msg_id, uint8_t *data, uint8_t *len) {
     uint8_t *ptr;
 
-    /* Check if RXB0 has a new received message waiting */
-    if (RXB0FUL) {
-        /* Extract the 11-bit standard message ID from receive registers */
+    if (RXB0FUL) /* CheckRXB0 */ {
+        // Get MSG ID
         *msg_id = get_msg_id_std();
-
-        /* Read the number of received data bytes from DLC */
+        // Get data length
         *len = RXB0DLC;
 
-        /* Get pointer to the first receive data byte register */
         ptr = (uint8_t *) & RXB0D0;
-
-        /* Copy received bytes from hardware buffer to caller's data array */
+        // Read data
         for (int i = 0; i < *len; i++) {
             data[i] = ptr[i];
         }
 
-        /* Clear the receive buffer full flag to allow next message */
-        RXB0FUL = 0;
-
-        /* Clear the RXB0 interrupt flag */
-        RXB0IF = 0;
+        RXB0FUL = 0; // Clear buffer flag
+        RXB0IF = 0; // Clear interrupt flag   
     }
 
-    /* Indicate no data available when buffer was empty */
+    // No data available.
     *len = 0;
 }
+

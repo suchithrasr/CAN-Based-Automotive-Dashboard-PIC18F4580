@@ -1,8 +1,8 @@
 /*
  * File:   adc.c
- * Author: Suchithra S
+ * Author: Suchitra S
  *
- * Created on 17 April, 2026, 9:38 AM
+ * Created on 27 April, 2026, 9:24 PM
  */
 
 
