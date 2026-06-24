@@ -76,10 +76,6 @@ CAN_BASED_MC_PROJECT1/
 - MPLAB X IDE
 - XC8 Compiler
 
-## Demo
-
-A working demo video of this project is available — [link to be added].
-
 ## Author
 
 Suchithra S — B.E. Electronics and Communication Engineering
